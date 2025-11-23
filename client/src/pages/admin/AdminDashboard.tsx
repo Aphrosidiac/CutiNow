@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api';
-import { Users, FileText, CheckSquare } from 'lucide-react';
+import { FileText, CheckSquare } from 'lucide-react';
 
 interface Request {
   id: number;

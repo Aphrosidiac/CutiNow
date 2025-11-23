@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
-import { CreditCard, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { CreditCard } from 'lucide-react';
 
 interface Balance {
   id: number;
