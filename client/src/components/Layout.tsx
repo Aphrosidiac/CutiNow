@@ -40,19 +40,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <nav className="p-4 space-y-2">
           {navItems.map((item) => {
             if (item.role && item.role !== user?.role && !(item.role === 'employee' && user?.role === 'employee')) {
-               // Show employee items to employees, admin items to admins.
-               // Actually, admin might want to apply leave too? Requirements said "Admin Features... Edit leave balance per employee".
-               // Let's assume Admin is pure management for now based on requirements, but often they are employees too.
-               // Requirement says: "User Roles: Employee (default), Admin".
-               // Requirements: "Admin Features: Admin dashboard, View all leave submissions...".
-               // Requirements: "Employee Features: Apply for leave...".
-               // I will show Employee features ONLY to 'employee' role and Admin features to 'admin'.
-               // Wait, usually admins can also be employees. But let's stick to strict separation if simplest, or maybe Admin sees everything.
-               // Let's allow Admin to see Admin links AND Profile. But maybe not Apply Leave?
-               // "Employee Features" list implies these are for Employees.
-               // I will hide 'Apply Leave' and 'History' from Admin for now to keep it clean, unless I decide Admin is a super-employee.
-               // Let's stick to: Admin sees Admin stuff + Profile. Employee sees Employee stuff + Profile.
-
                if (user?.role === 'admin' && item.role === 'employee') return null;
                if (user?.role === 'employee' && item.role === 'admin') return null;
             }

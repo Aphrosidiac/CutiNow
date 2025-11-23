@@ -87,7 +87,7 @@ const AdminLeaveRequests: React.FC = () => {
                   <td className="px-6 py-4">
                     {req.file_path ? (
                       <a
-                        href={`${import.meta.env.VITE_API_URL?.replace('/api', '')}/${req.file_path}`}
+                        href={`/${req.file_path}`}
                         target="_blank"
                         rel="noreferrer"
                         className="text-blue-600 hover:underline"
