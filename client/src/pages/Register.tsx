@@ -1,21 +1,47 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import api from '../api';
 
 const Register: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    setLoading(true);
+
     try {
-      await api.post('/auth/register', { full_name: fullName, email, password });
-      navigate('/login');
+      // Use backend API which auto-confirms email
+      const response = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          full_name: fullName,
+          email,
+          password
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Registration failed');
+      }
+
+      setSuccess(true);
+      // Navigate to login after 2 seconds
+      setTimeout(() => navigate('/login'), 2000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed');
+      setError(err.message || 'Registration failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -24,6 +50,11 @@ const Register: React.FC = () => {
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <h2 className="text-2xl font-bold mb-6 text-center text-primary">Join CutiNow</h2>
         {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4">{error}</div>}
+        {success && (
+          <div className="bg-green-100 text-green-700 p-3 rounded mb-4">
+            Registration successful! Redirecting to login...
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label className="block text-gray-700 mb-2">Full Name</label>
@@ -33,6 +64,7 @@ const Register: React.FC = () => {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
+              disabled={loading || success}
             />
           </div>
           <div className="mb-4">
@@ -43,6 +75,7 @@ const Register: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={loading || success}
             />
           </div>
           <div className="mb-6">
@@ -53,13 +86,16 @@ const Register: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={loading || success}
+              minLength={6}
             />
           </div>
           <button
             type="submit"
-            className="w-full bg-primary text-white py-2 rounded hover:bg-blue-800 transition"
+            className="w-full bg-primary text-white py-2 rounded hover:bg-blue-800 transition disabled:opacity-50"
+            disabled={loading || success}
           >
-            Sign Up
+            {loading ? 'Signing up...' : 'Sign Up'}
           </button>
         </form>
         <p className="mt-4 text-center text-sm">

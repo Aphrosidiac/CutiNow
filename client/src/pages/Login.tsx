@@ -1,29 +1,40 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../api';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const { login, user } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    setLoading(true);
+
     try {
-      const res = await api.post('/auth/login', { email, password });
-      login(res.data.token, res.data.user);
-      if (res.data.user.role === 'admin') {
+      await login(email, password);
+      // Navigation will happen after user is set in AuthContext
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Navigate when user is loaded
+  React.useEffect(() => {
+    if (user) {
+      if (user.role === 'admin') {
         navigate('/admin');
       } else {
         navigate('/dashboard');
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed');
     }
-  };
+  }, [user, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -39,6 +50,7 @@ const Login: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={loading}
             />
           </div>
           <div className="mb-6">
@@ -49,13 +61,15 @@ const Login: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={loading}
             />
           </div>
           <button
             type="submit"
-            className="w-full bg-primary text-white py-2 rounded hover:bg-blue-800 transition"
+            className="w-full bg-primary text-white py-2 rounded hover:bg-blue-800 transition disabled:opacity-50"
+            disabled={loading}
           >
-            Login
+            {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
         <p className="mt-4 text-center text-sm">

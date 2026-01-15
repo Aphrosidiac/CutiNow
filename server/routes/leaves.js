@@ -2,17 +2,16 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const { LeaveRequest, LeaveBalance, LeaveType, User, sequelize } = require('../models');
+const supabase = require('../config/supabase');
 const { authenticate, authorize } = require('../middleware/auth');
-const { Op } = require('sequelize');
 
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const fs = require('fs');
     const dir = 'uploads';
-    if (!fs.existsSync(dir)){
-        fs.mkdirSync(dir);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir);
     }
     cb(null, dir);
   },
@@ -68,34 +67,48 @@ router.post('/', authenticate, upload.single('document'), async (req, res) => {
     }
 
     // Check Balance
-    const balanceRecord = await LeaveBalance.findOne({
-      where: { userId, leaveTypeId }
-    });
+    const { data: balanceRecord, error: balanceError } = await supabase
+      .from('leave_balances')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('leave_type_id', leaveTypeId)
+      .single();
 
-    if (!balanceRecord) {
+    if (balanceError || !balanceRecord) {
       return res.status(400).json({ message: 'Leave balance not found for this type' });
     }
 
     if (balanceRecord.balance < days_count) {
-      return res.status(400).json({ message: `Insufficient leave balance. You have ${balanceRecord.balance} days, but requested ${days_count} days.` });
+      return res.status(400).json({
+        message: `Insufficient leave balance. You have ${balanceRecord.balance} days, but requested ${days_count} days.`
+      });
     }
 
     // Create Request
-    const request = await LeaveRequest.create({
-      userId,
-      leaveTypeId,
-      start_date,
-      end_date,
-      days_count,
-      reason,
-      file_path,
-      status: 'pending'
-    });
+    const { data: request, error: requestError } = await supabase
+      .from('leave_requests')
+      .insert({
+        user_id: userId,
+        leave_type_id: leaveTypeId,
+        start_date,
+        end_date,
+        days_count,
+        reason,
+        file_path,
+        status: 'pending'
+      })
+      .select()
+      .single();
+
+    if (requestError) {
+      console.error('Request creation error:', requestError);
+      return res.status(500).json({ message: 'Failed to create leave request' });
+    }
 
     res.status(201).json(request);
 
   } catch (error) {
-    console.error(error);
+    console.error('Server error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -103,13 +116,23 @@ router.post('/', authenticate, upload.single('document'), async (req, res) => {
 // Get User's Leave History
 router.get('/', authenticate, async (req, res) => {
   try {
-    const requests = await LeaveRequest.findAll({
-      where: { userId: req.user.id },
-      include: [{ model: LeaveType, attributes: ['name'] }],
-      order: [['createdAt', 'DESC']]
-    });
+    const { data: requests, error } = await supabase
+      .from('leave_requests')
+      .select(`
+        *,
+        leave_types (name)
+      `)
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch requests error:', error);
+      return res.status(500).json({ message: 'Failed to fetch leave requests' });
+    }
+
     res.json(requests);
   } catch (error) {
+    console.error('Server error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -117,12 +140,22 @@ router.get('/', authenticate, async (req, res) => {
 // Get User's Leave Balances
 router.get('/balances', authenticate, async (req, res) => {
   try {
-    const balances = await LeaveBalance.findAll({
-      where: { userId: req.user.id },
-      include: [{ model: LeaveType, attributes: ['name'] }]
-    });
+    const { data: balances, error } = await supabase
+      .from('leave_balances')
+      .select(`
+        *,
+        leave_types (name)
+      `)
+      .eq('user_id', req.user.id);
+
+    if (error) {
+      console.error('Fetch balances error:', error);
+      return res.status(500).json({ message: 'Failed to fetch leave balances' });
+    }
+
     res.json(balances);
   } catch (error) {
+    console.error('Server error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -132,67 +165,69 @@ router.get('/balances', authenticate, async (req, res) => {
 // Get All Requests (Admin)
 router.get('/admin', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const requests = await LeaveRequest.findAll({
-      include: [
-        { model: User, attributes: ['full_name', 'email'] },
-        { model: LeaveType, attributes: ['name'] }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
-    res.json(requests);
+    const { data: requests, error } = await supabase
+      .from('leave_requests')
+      .select(`
+        *,
+        profiles!leave_requests_user_id_fkey (full_name, id),
+        leave_types (name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch admin requests error:', error);
+      return res.status(500).json({ message: 'Failed to fetch leave requests' });
+    }
+
+    // Transform to match old format (include email from auth)
+    const requestsWithEmail = await Promise.all(requests.map(async (req) => {
+      const { data: { user } } = await supabase.auth.admin.getUserById(req.user_id);
+      return {
+        ...req,
+        User: {
+          full_name: req.profiles.full_name,
+          email: user?.email || ''
+        },
+        LeaveType: req.leave_types
+      };
+    }));
+
+    res.json(requestsWithEmail);
   } catch (error) {
+    console.error('Server error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
 // Approve/Reject Request (Admin)
 router.put('/:id/status', authenticate, authorize('admin'), async (req, res) => {
-  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { status, admin_remarks } = req.body; // status: 'approved' or 'rejected'
+    const { status, admin_remarks } = req.body;
 
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
-    const request = await LeaveRequest.findByPk(id, { transaction });
-    if (!request) {
-      await transaction.rollback();
-      return res.status(404).json({ message: 'Request not found' });
+    // Use the Supabase RPC function for transaction handling
+    const { data, error } = await supabase.rpc('process_leave_request', {
+      request_id: id,
+      new_status: status,
+      remarks: admin_remarks || null
+    });
+
+    if (error) {
+      console.error('Process request error:', error);
+      return res.status(400).json({ message: error.message });
     }
 
-    if (request.status !== 'pending') {
-      await transaction.rollback();
-      return res.status(400).json({ message: 'Request is already processed' });
-    }
-
-    // If approving, deduct balance
-    if (status === 'approved') {
-      const balanceRecord = await LeaveBalance.findOne({
-        where: { userId: request.userId, leaveTypeId: request.leaveTypeId },
-        transaction
-      });
-
-      if (!balanceRecord || balanceRecord.balance < request.days_count) {
-        await transaction.rollback();
-        return res.status(400).json({ message: 'Insufficient balance to approve this request (User balance may have changed)' });
-      }
-
-      await balanceRecord.decrement('balance', { by: request.days_count, transaction });
-    }
-
-    // Update request
-    request.status = status;
-    request.admin_remarks = admin_remarks;
-    await request.save({ transaction });
-
-    await transaction.commit();
-    res.json({ message: `Leave request ${status}`, request });
+    res.json({
+      message: `Leave request ${status}`,
+      result: data
+    });
 
   } catch (error) {
-    await transaction.rollback();
-    console.error(error);
+    console.error('Server error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });

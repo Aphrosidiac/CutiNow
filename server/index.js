@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { sequelize } = require('./models');
+require('dotenv').config();
+
 const authRoutes = require('./routes/auth');
 const leaveRoutes = require('./routes/leaves');
 const leaveTypeRoutes = require('./routes/leaveTypes');
@@ -34,19 +35,8 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Database Connection & Server Start
-sequelize.authenticate()
-  .then(() => {
-    console.log('Database connected.');
-    // In production, avoid sync({ force: true }) or even sync() if using migrations.
-    // For this MVP, sync({ alter: true }) updates schema without dropping data.
-    return sequelize.sync({ alter: true });
-  })
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('Unable to connect to the database:', err);
-  });
+// Start Server (No database connection check needed - Supabase handles this)
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log('Using Supabase for database and authentication');
+});

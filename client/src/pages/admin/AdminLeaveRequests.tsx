@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../../api';
 
 interface Request {
-  id: number;
+  id: string;
   start_date: string;
   end_date: string;
   days_count: number;
@@ -23,13 +23,22 @@ const AdminLeaveRequests: React.FC = () => {
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [remarks, setRemarks] = useState('');
   const [action, setAction] = useState<'approved' | 'rejected' | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchRequests();
   }, []);
 
-  const fetchRequests = () => {
-    api.get('/leaves/admin').then(res => setRequests(res.data)).catch(console.error);
+  const fetchRequests = async () => {
+    try {
+      const res = await api.get('/leaves/admin');
+      console.log('Admin requests:', res.data);
+      setRequests(res.data);
+    } catch (err: any) {
+      console.error('Fetch requests error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleActionClick = (req: Request, act: 'approved' | 'rejected') => {
@@ -54,6 +63,14 @@ const AdminLeaveRequests: React.FC = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">Loading requests...</p>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Manage Leave Requests</h2>
@@ -77,11 +94,11 @@ const AdminLeaveRequests: React.FC = () => {
               {requests.map(req => (
                 <tr key={req.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{req.User.full_name}</div>
-                    <div className="text-xs text-gray-500">{req.User.email}</div>
+                    <div className="font-medium text-gray-900">{req.User?.full_name || 'Unknown'}</div>
+                    <div className="text-xs text-gray-500">{req.User?.email || ''}</div>
                   </td>
-                  <td className="px-6 py-4">{req.LeaveType.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">{req.start_date} <br/><span className="text-xs text-gray-400">to</span> {req.end_date}</td>
+                  <td className="px-6 py-4">{req.LeaveType?.name || 'Unknown'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{req.start_date} <br /><span className="text-xs text-gray-400">to</span> {req.end_date}</td>
                   <td className="px-6 py-4">{req.days_count}</td>
                   <td className="px-6 py-4 max-w-xs truncate" title={req.reason}>{req.reason || '-'}</td>
                   <td className="px-6 py-4">
@@ -134,7 +151,7 @@ const AdminLeaveRequests: React.FC = () => {
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-bold mb-4 capitalize">{action} Request</h3>
             <p className="mb-4 text-gray-600">
-              Are you sure you want to {action} the leave request for <b>{selectedRequest.User.full_name}</b>?
+              Are you sure you want to {action} the leave request for <b>{selectedRequest.User?.full_name}</b>?
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Remarks (Optional)</label>

@@ -1,49 +1,62 @@
 const express = require('express');
 const router = express.Router();
-const { User, LeaveBalance, LeaveType } = require('../models');
+const supabase = require('../config/supabase');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // Get all users (Admin only)
 router.get('/', authenticate, authorize('admin'), async (req, res) => {
   try {
-    const users = await User.findAll({
-      attributes: ['id', 'full_name', 'email', 'role', 'join_date'],
-      order: [['full_name', 'ASC']]
-    });
-    res.json(users);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-// Get balances for a specific user
-router.get('/:id/balances', authenticate, authorize('admin'), async (req, res) => {
-  try {
-    const balances = await LeaveBalance.findAll({
-      where: { userId: req.params.id },
-      include: [{ model: LeaveType, attributes: ['name'] }]
-    });
-    res.json(balances);
-  } catch (error) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Update a specific balance record
-router.put('/balances/:id', authenticate, authorize('admin'), async (req, res) => {
-  try {
-    const { balance } = req.body;
-    const record = await LeaveBalance.findByPk(req.params.id);
-
-    if (!record) {
-      return res.status(404).json({ message: 'Balance record not found' });
+    if (error) {
+      console.error('Fetch users error:', error);
+      return res.status(500).json({ message: 'Failed to fetch users' });
     }
 
-    record.balance = balance;
-    await record.save();
+    // Get emails from auth.users
+    const usersWithEmail = await Promise.all(profiles.map(async (profile) => {
+      const { data: { user } } = await supabase.auth.admin.getUserById(profile.id);
+      return {
+        ...profile,
+        email: user?.email || ''
+      };
+    }));
 
-    res.json(record);
+    res.json(usersWithEmail);
   } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update user role (Admin only)
+router.put('/:id/role', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    if (!['employee', 'admin'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ role })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Update role error:', error);
+      return res.status(500).json({ message: 'Failed to update user role' });
+    }
+
+    res.json({ message: 'User role updated', user: data });
+  } catch (error) {
+    console.error('Server error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
